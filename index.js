@@ -271,52 +271,45 @@ async function run() {
 
     // Using aggregate pipeline
     app.get('/order-stats', verifyToken, verifyAdmin, async (req, res) => {
-      // Step 1: Get all distinct categories from the menu collection
-      const categories = await menuCollection.distinct("category");
-    
-      // Step 2: Get actual order data
-      const orderData = await paymentCollection.aggregate([
-        { $unwind: "$menuItemIds" },
+      const result = await paymentCollection.aggregate([
         {
-          $addFields: {
-            menuItemId: { $toObjectId: "$menuItemIds" }
+          $unwind: '$menuItemIds' // Unwind the menuItemIds array
+        },
+        {
+          $addFields: { 
+            menuItemId: { $toObjectId: '$menuItemIds' } // Convert menuItemIds to ObjectId
           }
         },
         {
           $lookup: {
-            from: "menu",
-            localField: "menuItemId",
-            foreignField: "_id",
-            as: "menuItem"
+            from: 'menu', // Name of the menu collection
+            localField: 'menuItemId', // Use the converted ObjectId field
+            foreignField: '_id', // Match with the _id field in menu collection
+            as: 'menuItems'
           }
         },
-        { $unwind: "$menuItem" },
+        {
+          $unwind: '$menuItems' // Unwind the matched menuItems array
+        },
         {
           $group: {
-            _id: "$menuItem.category",
-            quantity: { $sum: 1 },
-            revenue: { $sum: "$menuItem.price" }
+            _id: '$menuItems.category', // Group by category
+            quantity: { $sum: 1 }, // Count the quantity of items
+            revenue: { $sum: '$menuItems.price' } // Sum up the revenue
           }
         },
         {
           $project: {
-            _id: 0,
-            category: "$_id",
-            quantity: 1,
-            revenue: 1
+            _id: 0, // Exclude the default _id field
+            category: '$_id', // Rename _id to category
+            quantity: '$quantity',
+            revenue: '$revenue'
           }
         }
       ]).toArray();
     
-      // Step 3: Merge with all categories to ensure defaults
-      const mergedResult = categories.map(cat => {
-        const found = orderData.find(item => item.category === cat);
-        return found || { category: cat, quantity: 0, revenue: 0 };
-      });
-    
-      res.send(mergedResult);
+      res.send(result);
     });
-    
     
 
     // Send a ping to confirm a successful connection
