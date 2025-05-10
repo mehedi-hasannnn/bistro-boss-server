@@ -234,10 +234,15 @@ async function run() {
     })
 
     // stats and analytics
-    app.get('/admin-stats', verifyToken, verifyAdmin, async(req, res)=>{
+    // stats or analytics
+    app.get('/admin-stats', verifyToken, verifyAdmin, async (req, res) => {
       const users = await userCollection.estimatedDocumentCount();
       const menuItems = await menuCollection.estimatedDocumentCount();
       const orders = await paymentCollection.estimatedDocumentCount();
+
+      // this is not the best way
+      // const payments = await paymentCollection.find().toArray();
+      // const revenue = payments.reduce((total, payment) => total + payment.price, 0);
 
       const result = await paymentCollection.aggregate([
         {
@@ -247,11 +252,11 @@ async function run() {
               $sum: '$price'
             }
           }
-        },
+        }
       ]).toArray();
 
       const revenue = result.length > 0 ? result[0].totalRevenue : 0;
-      
+
       res.send({
         users,
         menuItems,
@@ -261,56 +266,54 @@ async function run() {
     })
 
 
-    // Order status
-    /* 
-    * Non efficient way:
-    1. load all payments
-    2. for every menuItemsIds which is an array, go find the items from the menuCollection
-    3. for every item in the menu collection that you found from a payment entry/document
+    // order status
+    /**
+     * ----------------------------
+     *    NON-Efficient Way
+     * ------------------------------
+     * 1. load all the payments
+     * 2. for every menuItemIds (which is an array), go find the item from menu collection
+     * 3. for every item in the menu collection that you found from a payment entry (document)
     */
 
-    // Using aggregate pipeline
-    app.get('/order-stats', verifyToken, verifyAdmin, async (req, res) => {
+    // using aggregate pipeline
+    app.get('/order-stats', verifyToken, verifyAdmin, async(req, res) =>{
       const result = await paymentCollection.aggregate([
         {
-          $unwind: '$menuItemIds' // Unwind the menuItemIds array
-        },
-        {
-          $addFields: { 
-            menuItemId: { $toObjectId: '$menuItemIds' } // Convert menuItemIds to ObjectId
-          }
+          $unwind: '$menuItemIds'
         },
         {
           $lookup: {
-            from: 'menu', // Name of the menu collection
-            localField: 'menuItemId', // Use the converted ObjectId field
-            foreignField: '_id', // Match with the _id field in menu collection
+            from: 'menu',
+            localField: 'menuItemIds',
+            foreignField: '_id',
             as: 'menuItems'
           }
         },
         {
-          $unwind: '$menuItems' // Unwind the matched menuItems array
+          $unwind: '$menuItems'
         },
         {
           $group: {
-            _id: '$menuItems.category', // Group by category
-            quantity: { $sum: 1 }, // Count the quantity of items
-            revenue: { $sum: '$menuItems.price' } // Sum up the revenue
+            _id: '$menuItems.category',
+            quantity:{ $sum: 1 },
+            revenue: { $sum: '$menuItems.price'} 
           }
         },
         {
           $project: {
-            _id: 0, // Exclude the default _id field
-            category: '$_id', // Rename _id to category
+            _id: 0,
+            category: '$_id',
             quantity: '$quantity',
             revenue: '$revenue'
           }
         }
       ]).toArray();
-    
+
       res.send(result);
+
     });
-    
+
 
     // Send a ping to confirm a successful connection
     // await client.db("admin").command({ ping: 1 });
